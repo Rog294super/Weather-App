@@ -43,3 +43,7 @@ _temp_extract/
 
 # Zip distributions (built artifacts)
 *.zip
+
+# other
+verify_setup.py
+CHANGES.md
