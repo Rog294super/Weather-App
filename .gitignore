@@ -1,2 +1,45 @@
+# Build artifacts
 *.spec
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Batch scripts (keep in repo but can regenerate)
 *.bat
+
+# PyInstaller
+*.manifest
+*.exe.backup
+
+# Logs
+*.log
+weather_debug.log
+
+# Config files (user-specific)
+config.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+temp/
+_temp_extract/
+
+# Backups
+*.backup
+*.bak
+
+# Zip distributions (built artifacts)
+*.zip

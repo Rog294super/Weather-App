@@ -1,0 +1,32 @@
+# UTF-8
+#
+# For more details, see https://pyinstaller.org/en/stable/spec-files.html#adding-version-resource
+
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x4,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+    ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        '040904B0',  # taal en codepagina, meestal 0409 = Engels (VS)
+        [StringStruct('CompanyName', 'Rog294super Weather'),
+         StringStruct('FileDescription', 'Weather'),
+         StringStruct('FileVersion', '1.0.0'),
+         StringStruct('InternalName', 'Weather.exe'),
+         StringStruct('LegalCopyright', '© 2026 Rog294super'),
+         StringStruct('OriginalFilename', 'Weather.exe'),
+         StringStruct('ProductName', 'Weather'),
+         StringStruct('ProductVersion', '1.0.0')])
+      ]),
+    VarFileInfo([VarStruct('Translation', [0x0409, 1200])])
+  ]
+)
