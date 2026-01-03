@@ -9,15 +9,12 @@ import requests
 import time
 import threading
 import logging
-from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import os
 import sys
 import subprocess
-import json
 from pathlib import Path
-import file_handler as fh
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 

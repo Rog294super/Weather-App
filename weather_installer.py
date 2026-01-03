@@ -9,8 +9,6 @@ Kleine installer die de ONEDIR versie (instant startup) downloadt en installeert
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import requests
-import os
-import sys
 import zipfile
 import subprocess
 import threading

@@ -14,7 +14,7 @@ if %errorlevel% neq 0 (
 )
 
 echo Compileren van updater_final.cpp...
-g++ -o updater.exe updater_final.cpp ^
+g++ -o Updater\updater.exe Updater\updater_final.cpp ^
     -municode ^
     -std=c++17 ^
     -O2 ^
@@ -34,7 +34,7 @@ if %errorlevel% equ 0 (
     echo.
     echo updater.exe is aangemaakt
     echo Grootte: 
-    dir updater.exe | findstr updater.exe
+    dir Updater\updater.exe | findstr Updater\updater.exe
     echo.
 ) else (
     echo.

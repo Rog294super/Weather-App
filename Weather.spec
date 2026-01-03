@@ -209,7 +209,7 @@ a = Analysis(
     pathex=[],
     binaries=binaries,
     datas=[item for item in [
-        ('updater\\updater.exe', 'updater') if os.path.exists('updater\\updater.exe') else None,
+        ('Updater\\updater.exe', '.') if os.path.exists('Updater\\updater.exe') else None,
         ('Weather_icon.ico', '.') if os.path.exists('Weather_icon.ico') else None,
     ] if item is not None],
     hiddenimports=[

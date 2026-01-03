@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Weather v1.25.2 - Build System
+echo Weather v1.0.0 - Build System
 echo ========================================
 echo.
 
@@ -24,9 +24,9 @@ if %errorlevel% neq 0 (
 REM Menu
 echo Wat wil je bouwen?
 echo.
-echo 1. ONEDIR (Instant Startup) - AANBEVOLEN
+echo 1. ONEDIR 
 echo 2. Installer
-echo 3. Alles (1+2)
+echo 3. Alles (1+2) - AANBEVOLEN voor distributie
 echo 4. Clean build folders
 echo.
 set /p choice="Keuze (1-4): "
@@ -51,7 +51,7 @@ goto end
 
 :build_onedir
 echo.
-echo [1/2] Bouwen ONEDIR versie (instant startup)...
+echo [1/2] Bouwen ONEDIR versie...
 echo ========================================
 pyinstaller --clean weather.spec
 
@@ -69,9 +69,9 @@ if %errorlevel% equ 0 (
 
 REM Maak ZIP voor distributie
 echo.
-echo Wil je een ZIP maken voor distributie? (j/n)
+echo Wil je een ZIP maken voor distributie? (y/n)
 set /p zip_choice=
-if /i "%zip_choice%"=="j" (
+if /i "%zip_choice%"=="y" (
     echo.
     echo [2/2] ZIP maken...
     powershell -Command "Compress-Archive -Path 'dist\Weather' -DestinationPath 'dist\Weather.zip' -Force"
