@@ -1,5 +1,4 @@
 # Build artifacts
-*.spec
 build/
 dist/
 __pycache__/
@@ -7,8 +6,6 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Batch scripts (keep in repo but can regenerate)
-*.bat
 
 # PyInstaller
 *.manifest
