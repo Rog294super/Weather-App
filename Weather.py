@@ -551,25 +551,25 @@ class WeatherAppGUI:
             
             # Format output
             output = "=" * 60 + "\n"
-            output += f"  WEATHER REPORT: {location_name.upper()}\n"
+            output += f"WEATHER REPORT: {location_name.upper()}\n"
             output += "=" * 60 + "\n\n"
             output += f"📍 Location: {address}\n"
             output += f"🕐 Time: {current.get('time', 'N/A')}\n\n"
             output += "─" * 60 + "\n"
-            output += "  CURRENT CONDITIONS\n"
+            output += "CURRENT CONDITIONS\n"
             output += "─" * 60 + "\n\n"
             
             # Weather icon
             weather_icon = self.get_weather_icon(weather_code)
             output += f"{weather_icon} {weather_desc}\n\n"
             
-            output += f"🌡️  Temperature:        {temp}°C\n"
+            output += f"🌡️ Temperature:        {temp}°C\n"
             output += f"🤚 Feels Like:         {feels_like}°C\n"
             output += f"💧 Humidity:           {humidity}%\n"
             output += f"💨 Wind Speed:         {wind_speed} km/h\n"
             output += f"🧭 Wind Direction:     {wind_direction}°\n"
-            output += f"🌧️  Precipitation:      {precipitation} mm\n"
-            output += f"☁️  Cloud Cover:        {cloud_cover}%\n"
+            output += f"🌧️ Precipitation:      {precipitation} mm\n"
+            output += f"☁️ Cloud Cover:        {cloud_cover}%\n"
             output += "\n" + "=" * 60 + "\n"
             
             return output
