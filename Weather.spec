@@ -2,7 +2,7 @@
 
 """
 Weather ONEDIR Spec - Met SSL support voor Python 3.13
-Versie: 1.25.2
+Versie: 1.0.0
 """
 
 import sys
@@ -205,7 +205,7 @@ print("="*60 + "\n")
 # Analysis
 # Analysis
 a = Analysis(
-    ['Weather_GUI.py'],
+    ['Weather.py'],
     pathex=[],
     binaries=binaries,
     datas=[item for item in [

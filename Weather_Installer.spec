@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['autoklik_installer.py'],
+    ['Weather_Installer.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Autoklik_Installer',
+    name='Weather_Installer',
     version='version.txt',
     debug=False,
     bootloader_ignore_signals=False,
