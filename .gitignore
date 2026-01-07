@@ -44,3 +44,6 @@ _temp_extract/
 # other
 file_handler.py
 CHANGES.md
+STARTUP_OPTIMIZATION.md
+create_icon.py
+

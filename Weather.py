@@ -1,16 +1,17 @@
-# version="1.0.0"
+# version="1.1.0"
 # author="Rog294super"
 # copyright="2026@ Rog294super"
 # license="MIT"
-# description="A simple weather application using Tkinter and open-meteo API"
+# description="A weather application with multi-location support using Tkinter and open-meteo API"
 
-# import necessary modules
 import requests
 import time
 import threading
 import logging
+import json
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
+from datetime import datetime
 import os
 import sys
 import subprocess
@@ -25,15 +26,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# variable declarations
+# Constants
 GITHUB_REPO = "Rog294super/Weather-App"
-VERSION = "1.0.0"
-api_open_meteo = "https://api.open-meteo.com/v1/forecast"
-default_params = {
-    "latitude": 53.122,
-    "longitude": 6.351,
-    "current": "temperature_2m,weathercode,windspeed_10m,precipitation"
-}
+VERSION = "1.1.0"
+CONFIG_FILE = "weather_locations.json"
 
 # Map waarin het script of de .exe zich bevindt
 if getattr(sys, 'frozen', False):
@@ -41,33 +37,74 @@ if getattr(sys, 'frozen', False):
 else:
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
+CONFIG_PATH = os.path.join(script_dir, CONFIG_FILE)
+
 # Weather code descriptions
 WEATHER_CODES = {
-    0: "Clear sky",
-    1: "Mainly clear",
-    2: "Partly cloudy",
-    3: "Overcast",
-    45: "Foggy",
-    48: "Depositing rime fog",
-    51: "Light drizzle",
-    53: "Moderate drizzle",
-    55: "Dense drizzle",
-    61: "Slight rain",
-    63: "Moderate rain",
-    65: "Heavy rain",
-    71: "Slight snow",
-    73: "Moderate snow",
-    75: "Heavy snow",
-    77: "Snow grains",
-    80: "Slight rain showers",
-    81: "Moderate rain showers",
-    82: "Violent rain showers",
-    85: "Slight snow showers",
-    86: "Heavy snow showers",
-    95: "Thunderstorm",
-    96: "Thunderstorm with slight hail",
-    99: "Thunderstorm with heavy hail"
+    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+    45: "Foggy", 48: "Depositing rime fog",
+    51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+    61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+    71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow", 77: "Snow grains",
+    80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+    85: "Slight snow showers", 86: "Heavy snow showers",
+    95: "Thunderstorm", 96: "Thunderstorm with slight hail", 99: "Thunderstorm with heavy hail"
 }
+
+
+class LocationManager:
+    """Manages saved locations"""
+    
+    def __init__(self, config_path):
+        self.config_path = config_path
+        self.locations = self.load_locations()
+    
+    def load_locations(self):
+        """Load saved locations from config file"""
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get('locations', [])
+            return []
+        except Exception as e:
+            logger.error(f"Error loading locations: {e}")
+            return []
+    
+    def save_locations(self):
+        """Save locations to config file"""
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump({'locations': self.locations}, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Error saving locations: {e}")
+    
+    def add_location(self, name, lat, lon, address, local_name=None):
+        """Add a new location"""
+        location = {
+            'name': name,
+            'local_name': local_name or name,
+            'lat': lat,
+            'lon': lon,
+            'address': address,
+            'added': datetime.now().isoformat()
+        }
+        # Check if location already exists
+        for loc in self.locations:
+            if loc['name'] == name:
+                return False
+        self.locations.append(location)
+        self.save_locations()
+        return True
+    
+    def remove_location(self, name):
+        """Remove a location"""
+        self.locations = [loc for loc in self.locations if loc['name'] != name]
+        self.save_locations()
+    
+    def get_locations(self):
+        """Get all locations"""
+        return self.locations
 
 
 class UpdateManager:
@@ -92,12 +129,8 @@ class UpdateManager:
             latest_version = data.get("tag_name", "").lstrip("v")
             
             if not latest_version:
-                logger.warning("No version tag found in release")
                 return None
             
-            logger.info(f"Current version: {self.current_version}, Latest version: {latest_version}")
-            
-            # Compare versions (simple string comparison for now)
             if latest_version > self.current_version:
                 return {
                     "version": latest_version,
@@ -105,74 +138,36 @@ class UpdateManager:
                     "notes": data.get("body", "No release notes available"),
                     "assets": data.get("assets", [])
                 }
-            
             return None
             
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error checking for updates: {e}")
-            return None
         except Exception as e:
-            logger.error(f"Unexpected error checking updates: {e}")
+            logger.error(f"Error checking for updates: {e}")
             return None
     
     def download_and_install_update(self, update_info, progress_callback=None):
         """Download and install the update using the updater.exe"""
         try:
-            # Find the main executable asset
             exe_asset = None
-            updater_asset = None
-            
             for asset in update_info["assets"]:
-                name = asset["name"].lower()
-                if name == "weather.exe":
+                if asset["name"].lower() == "weather.exe":
                     exe_asset = asset
-                elif "updater" in name and name.endswith(".exe"):
-                    updater_asset = asset
+                    break
             
             if not exe_asset:
                 raise Exception("No executable found in release assets")
             
             download_url = exe_asset["browser_download_url"]
             exe_path = Path(self.script_dir) / "Weather.exe"
-            
-            # Check if updater exists
             updater_path = Path(self.script_dir) / "updater.exe"
-            
-            if not updater_path.exists() and updater_asset:
-                # Download updater first
-                if progress_callback:
-                    progress_callback("Downloading updater...")
-                
-                logger.info("Downloading updater...")
-                response = requests.get(updater_asset["browser_download_url"], timeout=30)
-                response.raise_for_status()
-                
-                with open(updater_path, 'wb') as f:
-                    f.write(response.content)
-                
-                logger.info("Updater downloaded successfully")
             
             if not updater_path.exists():
                 raise Exception("Updater not found. Please reinstall the application.")
             
-            # Start the updater process
             if progress_callback:
                 progress_callback("Starting update process...")
             
-            logger.info(f"Launching updater: {updater_path}")
-            logger.info(f"Download URL: {download_url}")
-            logger.info(f"Target path: {exe_path}")
-            
-            # Launch updater with arguments
-            subprocess.Popen([
-                str(updater_path),
-                download_url,
-                str(exe_path)
-            ], cwd=self.script_dir)
-            
-            # Give the updater time to start
+            subprocess.Popen([str(updater_path), download_url, str(exe_path)], cwd=self.script_dir)
             time.sleep(1)
-            
             return True
             
         except Exception as e:
@@ -184,361 +179,341 @@ class WeatherAppGUI:
     def __init__(self, root):
         self.root = root
         self.root.title(f"Weather Application v{VERSION}")
-        self.debug_log_path = os.path.join(script_dir, "weather_debug.log")
         
-        # Initialize update manager
+        # Initialize managers
+        self.location_manager = LocationManager(CONFIG_PATH)
         self.update_manager = UpdateManager(VERSION, GITHUB_REPO)
         
-        # Initialize geocoder
-        try:
-            self.geolocator = Nominatim(user_agent=f"weather_app_v{VERSION}")
-        except Exception as e:
-            logger.error(f"Failed to initialize geocoder: {e}")
-            messagebox.showerror("Initialization Error", "Failed to initialize geocoding service")
-            self.geolocator = None
+        # Initialize geocoder (lazy loading - only when needed)
+        self.geolocator = None
 
-        # Icon application
+        # Set window icon
         self.set_window_icon()
 
         # Window sizing
         screen_width = root.winfo_screenwidth()
         screen_height = root.winfo_screenheight()
-        windows_width = min(700, screen_width)
-        windows_height = min(550, screen_height)
+        windows_width = min(900, screen_width)
+        windows_height = min(600, screen_height)
         
         # Center window
         x = (screen_width - windows_width) // 2
         y = (screen_height - windows_height) // 2
         self.root.geometry(f"{windows_width}x{windows_height}+{x}+{y}")
-        self.root.minsize(500, 450)
+        self.root.minsize(700, 500)
         self.root.resizable(True, True)
 
-        # Saving variables
         self.screen_width = screen_width
-        self.screen_height = screen_height 
-        self.windows_width = windows_width
-        self.windows_height = windows_height
+        self.screen_height = screen_height
         self.scale = max(0.8, min(1.4, screen_width / 1920))
-
-        # Style settings
-        style = ttk.Style()
-        style.theme_use("clam")
 
         # Colors
         self.bg_color = "#2b2b2b"
         self.fg_color = "#ffffff"
         self.accent_color = "#4a90e2"
         self.success_color = "#28a745"
-        self.warning_color = "#ffc107"
 
         # Create GUI
         self.create_gui()
         
-        # Check for updates on startup (in background)
-        threading.Thread(target=self.check_updates_startup, daemon=True).start()
+        # Check for updates on startup (delayed to not slow down startup)
+        self.root.after(3000, lambda: threading.Thread(target=self.check_updates_startup, daemon=True).start())
 
     def create_gui(self):
         """Create the main GUI elements"""
-        # Main frame
-        main_frame = tk.Frame(self.root, bg=self.bg_color)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Main container with two panes
+        main_paned = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, bg=self.bg_color, 
+                                     sashwidth=5, sashrelief=tk.RAISED)
+        main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Left panel - Saved locations
+        left_frame = tk.Frame(main_paned, bg=self.bg_color, width=250)
+        self.create_locations_panel(left_frame)
+        main_paned.add(left_frame, minsize=200)
+        
+        # Right panel - Weather display
+        right_frame = tk.Frame(main_paned, bg=self.bg_color)
+        self.create_weather_panel(right_frame)
+        main_paned.add(right_frame, minsize=400)
 
-        # Header frame with title and update button
-        header_frame = tk.Frame(main_frame, bg=self.bg_color)
-        header_frame.pack(fill=tk.X, pady=(0, 10))
+    def create_locations_panel(self, parent):
+        """Create the saved locations panel"""
+        # Header
+        header_frame = tk.Frame(parent, bg=self.bg_color)
+        header_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # Title
-        title_label = tk.Label(
-            header_frame, 
-            text="Weather Forecast", 
-            bg=self.bg_color, 
-            fg=self.fg_color, 
-            font=("Arial", int(18 * self.scale), "bold")
-        )
-        title_label.pack(side=tk.LEFT)
-        
-        # Version label
-        version_label = tk.Label(
-            header_frame,
-            text=f"v{VERSION}",
-            bg=self.bg_color,
-            fg="#888888",
-            font=("Arial", int(9 * self.scale))
-        )
-        version_label.pack(side=tk.LEFT, padx=(10, 0))
+        title = tk.Label(header_frame, text="📍 Locations", bg=self.bg_color, 
+                        fg=self.fg_color, font=("Arial", 14, "bold"))
+        title.pack(side=tk.LEFT)
         
         # Update button
         self.update_button = tk.Button(
-            header_frame,
-            text="🔄 Check Updates",
-            bg="#3a3a3a",
-            fg=self.fg_color,
-            font=("Arial", int(9 * self.scale)),
-            command=self.check_updates_manual,
-            cursor="hand2",
-            relief=tk.FLAT,
-            padx=10,
-            pady=2
+            header_frame, text="🔄", bg="#3a3a3a", fg=self.fg_color,
+            font=("Arial", 10), command=self.check_updates_manual,
+            cursor="hand2", relief=tk.FLAT, width=3
         )
         self.update_button.pack(side=tk.RIGHT)
+        
+        # Locations list
+        list_frame = tk.Frame(parent, bg=self.bg_color)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        
+        # Scrollbar
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Listbox for locations
+        self.locations_listbox = tk.Listbox(
+            list_frame, bg="#1e1e1e", fg=self.fg_color,
+            font=("Arial", 11), selectmode=tk.SINGLE,
+            yscrollcommand=scrollbar.set, relief=tk.FLAT,
+            highlightthickness=0, selectbackground=self.accent_color
+        )
+        self.locations_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.locations_listbox.yview)
+        
+        # Bind selection event
+        self.locations_listbox.bind('<<ListboxSelect>>', self.on_location_select)
+        
+        # Buttons frame
+        btn_frame = tk.Frame(parent, bg=self.bg_color)
+        btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        remove_btn = tk.Button(
+            btn_frame, text="🗑️ Remove", bg="#dc3545", fg=self.fg_color,
+            font=("Arial", 9), command=self.remove_selected_location,
+            cursor="hand2", relief=tk.FLAT
+        )
+        remove_btn.pack(fill=tk.X)
+        
+        # Load saved locations
+        self.refresh_locations_list()
+
+    def create_weather_panel(self, parent):
+        """Create the weather display panel"""
+        # Header with title and version
+        header_frame = tk.Frame(parent, bg=self.bg_color)
+        header_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        title_label = tk.Label(
+            header_frame, text="Weather Forecast", bg=self.bg_color,
+            fg=self.fg_color, font=("Arial", 18, "bold")
+        )
+        title_label.pack(side=tk.LEFT)
+        
+        version_label = tk.Label(
+            header_frame, text=f"v{VERSION}", bg=self.bg_color,
+            fg="#888888", font=("Arial", 9)
+        )
+        version_label.pack(side=tk.LEFT, padx=(10, 0))
 
         # Input frame
-        input_frame = tk.Frame(main_frame, bg=self.bg_color)
-        input_frame.pack(pady=10)
-
-        city_label = tk.Label(
-            input_frame, 
-            text="City, Country:", 
-            bg=self.bg_color, 
-            fg=self.fg_color, 
-            font=("Arial", int(12 * self.scale))
-        )
-        city_label.grid(row=0, column=0, padx=5, sticky="w")
+        input_frame = tk.Frame(parent, bg=self.bg_color)
+        input_frame.pack(pady=10, padx=10, fill=tk.X)
 
         self.city_entry = tk.Entry(
-            input_frame, 
-            font=("Arial", int(12 * self.scale)),
-            width=30
+            input_frame, font=("Arial", 12), width=30
         )
-        self.city_entry.grid(row=0, column=1, padx=5)
+        self.city_entry.pack(side=tk.LEFT, padx=(0, 5))
         self.city_entry.insert(0, "Groningen, Netherlands")
-        
-        # Bind Enter key to fetch weather
         self.city_entry.bind('<Return>', lambda e: self.fetch_weather_threaded())
 
         # Fetch button
-        fetch_button = tk.Button(
-            main_frame, 
-            text="Fetch Weather", 
-            bg=self.accent_color, 
-            fg=self.fg_color, 
-            font=("Arial", int(12 * self.scale)),
-            command=self.fetch_weather_threaded,
-            cursor="hand2",
-            relief=tk.FLAT,
-            padx=20,
-            pady=5
+        fetch_btn = tk.Button(
+            input_frame, text="Get Weather", bg=self.accent_color,
+            fg=self.fg_color, font=("Arial", 11), command=self.fetch_weather_threaded,
+            cursor="hand2", relief=tk.FLAT, padx=15, pady=5
         )
-        fetch_button.pack(pady=10)
+        fetch_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Add to saved button
+        save_btn = tk.Button(
+            input_frame, text="💾 Save", bg=self.success_color,
+            fg=self.fg_color, font=("Arial", 11), command=self.save_current_location,
+            cursor="hand2", relief=tk.FLAT, padx=10, pady=5
+        )
+        save_btn.pack(side=tk.LEFT)
 
-        # Weather display frame
-        self.weather_frame = tk.Frame(main_frame, bg=self.bg_color)
-        self.weather_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        # Weather display
+        display_frame = tk.Frame(parent, bg=self.bg_color)
+        display_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
-        # Scrolled text for weather info
         self.weather_text = scrolledtext.ScrolledText(
-            self.weather_frame,
-            wrap=tk.WORD,
-            width=60,
-            height=15,
-            font=("Consolas", int(10 * self.scale)),
-            bg="#1e1e1e",
-            fg=self.fg_color,
-            relief=tk.FLAT,
-            padx=10,
-            pady=10
+            display_frame, wrap=tk.WORD, font=("Courier New", 10),
+            bg="#1e1e1e", fg=self.fg_color, relief=tk.FLAT,
+            padx=15, pady=15
         )
         self.weather_text.pack(fill=tk.BOTH, expand=True)
         self.weather_text.insert(tk.END, "🌤️  Weather Application\n\n")
-        self.weather_text.insert(tk.END, "Enter a city name and click 'Fetch Weather' to get started.\n")
-        self.weather_text.insert(tk.END, "You can also press Enter after typing the city name.\n")
+        self.weather_text.insert(tk.END, "• Enter a city name and click 'Get Weather'\n")
+        self.weather_text.insert(tk.END, "• Click '💾 Save' to add to your locations\n")
+        self.weather_text.insert(tk.END, "• Select a saved location to view its weather\n")
         self.weather_text.config(state=tk.DISABLED)
+        
+        # Store current location data
+        self.current_location_data = None
 
-    def check_updates_startup(self):
-        """Check for updates on startup (silent)"""
+    def refresh_locations_list(self):
+        """Refresh the locations listbox"""
+        self.locations_listbox.delete(0, tk.END)
+        locations = self.location_manager.get_locations()
+        for loc in locations:
+            display_name = f"{loc['local_name']}"
+            if loc['local_name'] != loc['name']:
+                display_name += f" ({loc['name']})"
+            self.locations_listbox.insert(tk.END, display_name)
+
+    def on_location_select(self, event):
+        """Handle location selection"""
+        selection = self.locations_listbox.curselection()
+        if not selection:
+            return
+        
+        idx = selection[0]
+        locations = self.location_manager.get_locations()
+        if idx >= len(locations):
+            return
+        
+        location = locations[idx]
+        self.city_entry.delete(0, tk.END)
+        self.city_entry.insert(0, location['name'])
+        
+        # Fetch weather for this location
+        threading.Thread(target=self.fetch_weather_for_saved_location, 
+                        args=(location,), daemon=True).start()
+
+    def fetch_weather_for_saved_location(self, location):
+        """Fetch weather for a saved location"""
         try:
-            time.sleep(2)  # Wait a bit after startup
-            update_info = self.update_manager.check_for_updates()
+            self.weather_text.config(state=tk.NORMAL)
+            self.weather_text.delete(1.0, tk.END)
+            self.weather_text.insert(tk.END, f"⏳ Loading weather for {location['local_name']}...\n")
+            self.weather_text.config(state=tk.DISABLED)
             
-            if update_info:
-                # Update the button to indicate update available
-                self.root.after(0, lambda: self.update_button.config(
-                    text=f"⬇️ Update Available (v{update_info['version']})",
-                    bg=self.success_color
-                ))
+            weather_data = self.fetch_weather_data(location['lat'], location['lon'])
+            
+            # Store current location
+            self.current_location_data = {
+                'name': location['name'],
+                'local_name': location['local_name'],
+                'lat': location['lat'],
+                'lon': location['lon'],
+                'address': location['address']
+            }
+            
+            formatted = self.format_weather_data(weather_data, location['local_name'], 
+                                                 location['address'], location['name'])
+            
+            self.weather_text.config(state=tk.NORMAL)
+            self.weather_text.delete(1.0, tk.END)
+            self.weather_text.insert(tk.END, formatted)
+            self.weather_text.config(state=tk.DISABLED)
+            
         except Exception as e:
-            logger.error(f"Error checking updates on startup: {e}")
+            logger.error(f"Error fetching saved location weather: {e}")
+            self.show_error(str(e))
 
-    def check_updates_manual(self):
-        """Check for updates manually (with user feedback)"""
-        self.update_button.config(state=tk.DISABLED, text="Checking...")
+    def save_current_location(self):
+        """Save the currently displayed location"""
+        if not self.current_location_data:
+            messagebox.showwarning("No Location", "Please fetch weather for a location first.")
+            return
         
-        def check_thread():
-            try:
-                update_info = self.update_manager.check_for_updates()
-                
-                if update_info:
-                    self.root.after(0, lambda: self.show_update_dialog(update_info))
-                else:
-                    self.root.after(0, lambda: messagebox.showinfo(
-                        "Up to Date",
-                        f"You are running the latest version (v{VERSION})"
-                    ))
-            except Exception as e:
-                self.root.after(0, lambda: messagebox.showerror(
-                    "Update Check Failed",
-                    f"Failed to check for updates:\n{str(e)}"
-                ))
-            finally:
-                self.root.after(0, lambda: self.update_button.config(
-                    state=tk.NORMAL,
-                    text="🔄 Check Updates"
-                ))
+        success = self.location_manager.add_location(
+            self.current_location_data['name'],
+            self.current_location_data['lat'],
+            self.current_location_data['lon'],
+            self.current_location_data['address'],
+            self.current_location_data.get('local_name')
+        )
         
-        threading.Thread(target=check_thread, daemon=True).start()
+        if success:
+            self.refresh_locations_list()
+            messagebox.showinfo("Success", f"Location '{self.current_location_data['local_name']}' saved!")
+        else:
+            messagebox.showinfo("Already Saved", "This location is already in your list.")
 
-    def show_update_dialog(self, update_info):
-        """Show dialog with update information"""
-        message = f"A new version is available!\n\n"
-        message += f"Current version: v{VERSION}\n"
-        message += f"Latest version: v{update_info['version']}\n\n"
-        message += f"Release notes:\n{update_info['notes'][:200]}"
+    def remove_selected_location(self):
+        """Remove the selected location"""
+        selection = self.locations_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a location to remove.")
+            return
         
-        if len(update_info['notes']) > 200:
-            message += "..."
+        idx = selection[0]
+        locations = self.location_manager.get_locations()
+        if idx >= len(locations):
+            return
         
-        message += "\n\nDo you want to download and install the update?\n"
-        message += "(The application will close and restart after update)"
-        
-        result = messagebox.askyesno("Update Available", message)
+        location = locations[idx]
+        result = messagebox.askyesno("Confirm", f"Remove '{location['local_name']}'?")
         
         if result:
-            self.install_update(update_info)
-
-    def install_update(self, update_info):
-        """Install the update"""
-        # Create progress window
-        progress_window = tk.Toplevel(self.root)
-        progress_window.title("Installing Update")
-        progress_window.geometry("400x150")
-        progress_window.resizable(False, False)
-        progress_window.transient(self.root)
-        progress_window.grab_set()
-        
-        # Center the window
-        progress_window.update_idletasks()
-        x = (self.screen_width - 400) // 2
-        y = (self.screen_height - 150) // 2
-        progress_window.geometry(f"+{x}+{y}")
-        
-        progress_frame = tk.Frame(progress_window, bg=self.bg_color)
-        progress_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        status_label = tk.Label(
-            progress_frame,
-            text="Preparing update...",
-            bg=self.bg_color,
-            fg=self.fg_color,
-            font=("Arial", 11)
-        )
-        status_label.pack(pady=10)
-        
-        progress_bar = ttk.Progressbar(
-            progress_frame,
-            mode='indeterminate',
-            length=300
-        )
-        progress_bar.pack(pady=10)
-        progress_bar.start(10)
-        
-        def progress_callback(message):
-            status_label.config(text=message)
-            progress_window.update()
-        
-        def update_thread():
-            try:
-                success = self.update_manager.download_and_install_update(
-                    update_info,
-                    progress_callback
-                )
-                
-                if success:
-                    progress_window.after(0, progress_window.destroy)
-                    time.sleep(0.5)
-                    # Close the application - updater will restart it
-                    self.root.after(0, self.root.destroy)
-                else:
-                    raise Exception("Update installation failed")
-                    
-            except Exception as e:
-                logger.error(f"Update installation error: {e}")
-                progress_window.after(0, progress_window.destroy)
-                messagebox.showerror(
-                    "Update Failed",
-                    f"Failed to install update:\n{str(e)}\n\nPlease try again or download manually."
-                )
-        
-        threading.Thread(target=update_thread, daemon=True).start()
+            self.location_manager.remove_location(location['name'])
+            self.refresh_locations_list()
 
     def get_coordinates(self, location_name):
-        """Get latitude and longitude from city and country name"""
+        """Get coordinates and location names in multiple languages"""
+        # Lazy initialize geocoder
         if not self.geolocator:
-            raise RuntimeError("Geocoding service not available")
+            try:
+                self.geolocator = Nominatim(user_agent=f"weather_app_v{VERSION}")
+            except Exception as e:
+                raise RuntimeError(f"Geocoding service not available: {e}")
         
         try:
             logger.info(f"Geocoding location: {location_name}")
-            location = self.geolocator.geocode(location_name, timeout=10)
+            location = self.geolocator.geocode(location_name, timeout=10, language='en')
             
             if location:
-                logger.info(f"Found coordinates: {location.latitude}, {location.longitude}")
-                return location.latitude, location.longitude, location.address
+                # Try to get local name
+                try:
+                    local_location = self.geolocator.geocode(location_name, timeout=10, 
+                                                            language='local', addressdetails=True)
+                    local_name = local_location.address if local_location else location.address
+                except:
+                    local_name = location.address
+                
+                logger.info(f"Found: {location.latitude}, {location.longitude}")
+                return location.latitude, location.longitude, location.address, local_name
             else:
                 raise ValueError(f"Could not find location: {location_name}")
                 
         except GeocoderTimedOut:
-            logger.error("Geocoding service timed out")
             raise RuntimeError("Geocoding service timed out. Please try again.")
         except GeocoderServiceError as e:
-            logger.error(f"Geocoding service error: {e}")
             raise RuntimeError(f"Geocoding service error: {e}")
         except Exception as e:
-            logger.error(f"Unexpected geocoding error: {e}")
             raise RuntimeError(f"Failed to get coordinates: {e}")
 
     def fetch_weather_data(self, lat, lon):
-        """Fetch detailed weather data from Open-Meteo API"""
+        """Fetch weather data from Open-Meteo API"""
         try:
             url = (
                 f"https://api.open-meteo.com/v1/forecast"
                 f"?latitude={lat}&longitude={lon}"
                 f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,"
-                f"precipitation,rain,showers,snowfall,weather_code,cloud_cover,"
-                f"wind_speed_10m,wind_direction_10m,wind_gusts_10m"
-                f"&hourly=temperature_2m,precipitation_probability,precipitation,weather_code"
-                f"&forecast_days=1"
+                f"precipitation,rain,weather_code,cloud_cover,"
+                f"wind_speed_10m,wind_direction_10m"
                 f"&timezone=auto"
             )
             
-            logger.info(f"Fetching weather from: {url}")
             response = requests.get(url, timeout=10)
             response.raise_for_status()
-            
-            data = response.json()
-            logger.info("Weather data fetched successfully")
-            return data
+            return response.json()
             
         except requests.exceptions.Timeout:
-            logger.error("Weather API request timed out")
-            raise RuntimeError("Weather API request timed out. Please try again.")
+            raise RuntimeError("Weather API request timed out.")
         except requests.exceptions.ConnectionError:
-            logger.error("Failed to connect to weather API")
-            raise RuntimeError("Failed to connect to weather service. Check your internet connection.")
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error: {e}")
-            raise RuntimeError(f"Weather API error: {e}")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request error: {e}")
-            raise RuntimeError(f"Failed to fetch weather data: {e}")
+            raise RuntimeError("Failed to connect to weather service.")
         except Exception as e:
-            logger.error(f"Unexpected error fetching weather: {e}")
-            raise RuntimeError(f"Unexpected error: {e}")
+            raise RuntimeError(f"Failed to fetch weather data: {e}")
 
-    def format_weather_data(self, weather_data, location_name, address):
-        """Format weather data for display"""
+    def format_weather_data(self, weather_data, location_name, address_en, address_local=None):
+        """Format weather data for display with proper alignment"""
         try:
             current = weather_data.get('current', {})
             
-            # Extract current weather
             temp = current.get('temperature_2m', 'N/A')
             feels_like = current.get('apparent_temperature', 'N/A')
             humidity = current.get('relative_humidity_2m', 'N/A')
@@ -549,28 +524,35 @@ class WeatherAppGUI:
             precipitation = current.get('precipitation', 0)
             cloud_cover = current.get('cloud_cover', 'N/A')
             
-            # Format output
-            output = "=" * 60 + "\n"
-            output += f"WEATHER REPORT: {location_name.upper()}\n"
-            output += "=" * 60 + "\n\n"
-            output += f"📍 Location: {address}\n"
-            output += f"🕐 Time: {current.get('time', 'N/A')}\n\n"
-            output += "─" * 60 + "\n"
-            output += "CURRENT CONDITIONS\n"
-            output += "─" * 60 + "\n\n"
-            
-            # Weather icon
             weather_icon = self.get_weather_icon(weather_code)
-            output += f"{weather_icon} {weather_desc}\n\n"
             
-            output += f"🌡️ Temperature:        {temp}°C\n"
-            output += f"🤚 Feels Like:         {feels_like}°C\n"
-            output += f"💧 Humidity:           {humidity}%\n"
-            output += f"💨 Wind Speed:         {wind_speed} km/h\n"
-            output += f"🧭 Wind Direction:     {wind_direction}°\n"
-            output += f"🌧️ Precipitation:      {precipitation} mm\n"
-            output += f"☁️ Cloud Cover:        {cloud_cover}%\n"
-            output += "\n" + "=" * 60 + "\n"
+            # Format with proper alignment
+            output = "=" * 64 + "\n"
+            output += f"  WEATHER REPORT: {location_name.upper()}\n"
+            output += "=" * 64 + "\n\n"
+            
+            # Show both language versions if different
+            if address_local and address_local != address_en:
+                output += f"📍 Location (Local): {address_local}\n"
+                output += f"📍 Location (EN):    {address_en}\n"
+            else:
+                output += f"📍 Location: {address_en}\n"
+            
+            output += f"🕐 Time:     {current.get('time', 'N/A')}\n\n"
+            output += "─" * 64 + "\n"
+            output += "  CURRENT CONDITIONS\n"
+            output += "─" * 64 + "\n\n"
+            output += f"{weather_icon}  {weather_desc}\n\n"
+            
+            # Aligned data (using proper spacing)
+            output += f"🌡️  Temperature:       {str(temp):>6}°C\n"
+            output += f"🤚 Feels Like:        {str(feels_like):>6}°C\n"
+            output += f"💧 Humidity:          {str(humidity):>6}%\n"
+            output += f"💨 Wind Speed:        {str(wind_speed):>6} km/h\n"
+            output += f"🧭 Wind Direction:    {str(wind_direction):>6}°\n"
+            output += f"🌧️  Precipitation:     {str(precipitation):>6} mm\n"
+            output += f"☁️  Cloud Cover:       {str(cloud_cover):>6}%\n"
+            output += "\n" + "=" * 64 + "\n"
             
             return output
             
@@ -580,26 +562,20 @@ class WeatherAppGUI:
 
     def get_weather_icon(self, code):
         """Get emoji icon for weather code"""
-        if code == 0:
-            return "☀️"
-        elif code in [1, 2]:
-            return "🌤️"
-        elif code == 3:
-            return "☁️"
-        elif code in [45, 48]:
-            return "🌫️"
-        elif code in [51, 53, 55, 61, 63, 80, 81]:
-            return "🌧️"
-        elif code in [65, 82]:
-            return "⛈️"
-        elif code in [71, 73, 75, 77, 85, 86]:
-            return "🌨️"
-        elif code in [95, 96, 99]:
-            return "⚡"
-        return "🌈"
+        icons = {
+            0: "☀️", 1: "🌤️", 2: "🌤️", 3: "☁️",
+            45: "🌫️", 48: "🌫️",
+            51: "🌧️", 53: "🌧️", 55: "🌧️",
+            61: "🌧️", 63: "🌧️", 65: "⛈️",
+            71: "🌨️", 73: "🌨️", 75: "🌨️", 77: "🌨️",
+            80: "🌧️", 81: "🌧️", 82: "⛈️",
+            85: "🌨️", 86: "🌨️",
+            95: "⚡", 96: "⚡", 99: "⚡"
+        }
+        return icons.get(code, "🌈")
 
     def fetch_weather_threaded(self):
-        """Fetch weather in a separate thread to avoid UI freezing"""
+        """Fetch weather in a separate thread"""
         thread = threading.Thread(target=self.fetch_weather, daemon=True)
         thread.start()
 
@@ -611,49 +587,103 @@ class WeatherAppGUI:
             messagebox.showwarning("Input Error", "Please enter a city name.")
             return
         
-        # Update UI
         self.weather_text.config(state=tk.NORMAL)
         self.weather_text.delete(1.0, tk.END)
-        self.weather_text.insert(tk.END, "⏳ Fetching weather data...\n")
-        self.weather_text.insert(tk.END, f"   Looking up: {city}\n")
+        self.weather_text.insert(tk.END, f"⏳ Fetching weather for {city}...\n")
         self.weather_text.config(state=tk.DISABLED)
         
         try:
-            # Get coordinates
-            lat, lon, address = self.get_coordinates(city)
+            lat, lon, address_en, address_local = self.get_coordinates(city)
             
-            self.weather_text.config(state=tk.NORMAL)
-            self.weather_text.insert(tk.END, f"✓ Coordinates found: {lat:.4f}, {lon:.4f}\n")
-            self.weather_text.insert(tk.END, "⏳ Fetching weather...\n")
-            self.weather_text.config(state=tk.DISABLED)
-            
-            # Fetch weather
             weather_data = self.fetch_weather_data(lat, lon)
             
-            # Format and display
-            formatted_weather = self.format_weather_data(weather_data, city, address)
+            # Store current location
+            self.current_location_data = {
+                'name': city,
+                'local_name': address_local,
+                'lat': lat,
+                'lon': lon,
+                'address': address_en
+            }
+            
+            formatted = self.format_weather_data(weather_data, city, address_en, address_local)
             
             self.weather_text.config(state=tk.NORMAL)
             self.weather_text.delete(1.0, tk.END)
-            self.weather_text.insert(tk.END, formatted_weather)
+            self.weather_text.insert(tk.END, formatted)
             self.weather_text.config(state=tk.DISABLED)
             
         except Exception as e:
             logger.error(f"Error in fetch_weather: {e}")
-            self.weather_text.config(state=tk.NORMAL)
-            self.weather_text.delete(1.0, tk.END)
-            self.weather_text.insert(tk.END, "❌ ERROR\n\n")
-            self.weather_text.insert(tk.END, f"{str(e)}\n\n")
-            self.weather_text.insert(tk.END, "Please check:\n")
-            self.weather_text.insert(tk.END, "  • City name spelling\n")
-            self.weather_text.insert(tk.END, "  • Internet connection\n")
-            self.weather_text.insert(tk.END, "  • Try format: 'City, Country'\n")
-            self.weather_text.config(state=tk.DISABLED)
+            self.show_error(str(e))
+
+    def show_error(self, error_msg):
+        """Display error message"""
+        self.weather_text.config(state=tk.NORMAL)
+        self.weather_text.delete(1.0, tk.END)
+        self.weather_text.insert(tk.END, "❌ ERROR\n\n")
+        self.weather_text.insert(tk.END, f"{error_msg}\n\n")
+        self.weather_text.insert(tk.END, "Please check:\n")
+        self.weather_text.insert(tk.END, "  • City name spelling\n")
+        self.weather_text.insert(tk.END, "  • Internet connection\n")
+        self.weather_text.insert(tk.END, "  • Try format: 'City, Country'\n")
+        self.weather_text.config(state=tk.DISABLED)
+
+    def check_updates_startup(self):
+        """Check for updates on startup (silent)"""
+        try:
+            time.sleep(2)
+            update_info = self.update_manager.check_for_updates()
+            if update_info:
+                self.root.after(0, lambda: self.update_button.config(
+                    text=f"⬇️", bg=self.success_color
+                ))
+        except Exception as e:
+            logger.error(f"Error checking updates: {e}")
+
+    def check_updates_manual(self):
+        """Check for updates manually"""
+        self.update_button.config(state=tk.DISABLED)
+        
+        def check_thread():
+            try:
+                update_info = self.update_manager.check_for_updates()
+                if update_info:
+                    self.root.after(0, lambda: self.show_update_dialog(update_info))
+                else:
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Up to Date", f"You are running the latest version (v{VERSION})"
+                    ))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Update Check Failed", f"Failed to check for updates:\n{str(e)}"
+                ))
+            finally:
+                self.root.after(0, lambda: self.update_button.config(state=tk.NORMAL))
+        
+        threading.Thread(target=check_thread, daemon=True).start()
+
+    def show_update_dialog(self, update_info):
+        """Show update dialog"""
+        message = f"New version available: v{update_info['version']}\n\n"
+        message += f"Current: v{VERSION}\n\nInstall now?"
+        
+        if messagebox.askyesno("Update Available", message):
+            self.install_update(update_info)
+
+    def install_update(self, update_info):
+        """Install update"""
+        try:
+            self.update_manager.download_and_install_update(update_info)
+            time.sleep(0.5)
+            self.root.destroy()
+        except Exception as e:
+            messagebox.showerror("Update Failed", f"Failed to install update:\n{str(e)}")
 
     def set_window_icon(self):
         """Set window icon if available"""
         try:
-            icon_path = os.path.join(script_dir, "icon.ico")
+            icon_path = os.path.join(script_dir, "Weather_icon.ico")
             if os.path.exists(icon_path):
                 self.root.iconbitmap(icon_path)
         except Exception as e:

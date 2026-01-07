@@ -264,13 +264,15 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=True,
+    upx_exclude=[],
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='Weather_icon.ico' if os.path.exists('Weather_icon.ico') else None,
 )
 
 coll = COLLECT(
@@ -278,7 +280,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=False,
+    upx=True,
     upx_exclude=[],
     name='Weather',
 )
