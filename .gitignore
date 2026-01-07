@@ -42,5 +42,5 @@ _temp_extract/
 *.zip
 
 # other
-verify_setup.py
+file_handler.py
 CHANGES.md
