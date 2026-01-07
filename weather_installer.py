@@ -1,6 +1,6 @@
 """
 Weather Online Installer - ONEDIR versie
-Versie: 1.0.0
+Versie: 1.1.0
 Auteur: Rog294super
 
 Kleine installer die de ONEDIR versie (instant startup) downloadt en installeert.
@@ -16,7 +16,7 @@ from pathlib import Path
 import shutil
 
 GITHUB_REPO = "Rog294super/Weather-App"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 class InstallerGUI:
