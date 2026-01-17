@@ -1,4 +1,4 @@
-# version="1.1.0"
+# version="1.3.0"
 # author="Rog294super"
 # copyright="2026@ Rog294super"
 # license="MIT"
@@ -10,7 +10,7 @@ import threading
 import logging
 import json
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext
 from datetime import datetime
 import os
 import sys
@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+from weather_cache import WeatherCache
 
 # Configure logging
 logging.basicConfig(
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 GITHUB_REPO = "Rog294super/Weather-App"
-VERSION = "1.1.0"
+VERSION = "1.3.0"
 CONFIG_FILE = "weather_locations.json"
 
 # Map waarin het script of de .exe zich bevindt
@@ -183,9 +184,13 @@ class WeatherAppGUI:
         # Initialize managers
         self.location_manager = LocationManager(CONFIG_PATH)
         self.update_manager = UpdateManager(VERSION, GITHUB_REPO)
+        self.weather_cache = WeatherCache(15)  # 15 minute cache
         
         # Initialize geocoder (lazy loading - only when needed)
         self.geolocator = None
+        
+        # Memory management - track active threads
+        self.active_threads = []
 
         # Set window icon
         self.set_window_icon()
@@ -217,7 +222,7 @@ class WeatherAppGUI:
         self.create_gui()
         
         # Check for updates on startup (delayed to not slow down startup)
-        self.root.after(3000, lambda: threading.Thread(target=self.check_updates_startup, daemon=True).start())
+        self.root.after(3000, lambda: self._start_thread(self.check_updates_startup))
 
     def create_gui(self):
         """Create the main GUI elements"""
@@ -235,6 +240,17 @@ class WeatherAppGUI:
         right_frame = tk.Frame(main_paned, bg=self.bg_color)
         self.create_weather_panel(right_frame)
         main_paned.add(right_frame, minsize=400)
+
+    def _start_thread(self, target, args=()):
+        """Start a managed thread with cleanup"""
+        # Clean up dead threads every 10 launches
+        if len(self.active_threads) > 10:
+            self.active_threads = [t for t in self.active_threads if t.is_alive()]
+        
+        thread = threading.Thread(target=target, args=args, daemon=True)
+        thread.start()
+        self.active_threads.append(thread)
+        return thread
 
     def create_locations_panel(self, parent):
         """Create the saved locations panel"""
@@ -275,6 +291,7 @@ class WeatherAppGUI:
         # Bind selection event
         self.locations_listbox.bind('<<ListboxSelect>>', self.on_location_select)
         
+        # Buttons under list of locations
         # Buttons frame
         btn_frame = tk.Frame(parent, bg=self.bg_color)
         btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
@@ -284,7 +301,15 @@ class WeatherAppGUI:
             font=("Arial", 9), command=self.remove_selected_location,
             cursor="hand2", relief=tk.FLAT
         )
-        remove_btn.pack(fill=tk.X)
+        remove_btn.pack(fill=tk.X, pady=(0, 5))
+        
+        # Clear cache button
+        clear_cache_btn = tk.Button(
+            btn_frame, text="🔄 Clear Cache", bg="#6c757d", fg=self.fg_color,
+            font=("Arial", 9), command=self.clear_cache,
+            cursor="hand2", relief=tk.FLAT
+        )
+        clear_cache_btn.pack(fill=tk.X)
         
         # Load saved locations
         self.refresh_locations_list()
@@ -306,6 +331,13 @@ class WeatherAppGUI:
             fg="#888888", font=("Arial", 9)
         )
         version_label.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Cache indicator
+        self.cache_label = tk.Label(
+            header_frame, text="📦 Cache: 0", bg=self.bg_color,
+            fg="#888888", font=("Arial", 8)
+        )
+        self.cache_label.pack(side=tk.RIGHT)
 
         # Input frame
         input_frame = tk.Frame(parent, bg=self.bg_color)
@@ -344,14 +376,27 @@ class WeatherAppGUI:
             padx=15, pady=15
         )
         self.weather_text.pack(fill=tk.BOTH, expand=True)
-        self.weather_text.insert(tk.END, "🌤️  Weather Application\n\n")
+        self.weather_text.insert(tk.END, "🌤️  Weather Application v" + VERSION + "\n\n")
         self.weather_text.insert(tk.END, "• Enter a city name and click 'Get Weather'\n")
         self.weather_text.insert(tk.END, "• Click '💾 Save' to add to your locations\n")
         self.weather_text.insert(tk.END, "• Select a saved location to view its weather\n")
+        self.weather_text.insert(tk.END, "• 📦 Weather cached for 15 min (faster access!)\n")
+        self.weather_text.insert(tk.END, "• To check for updates for the Weather app, click the '🔄' button\n")
         self.weather_text.config(state=tk.DISABLED)
         
         # Store current location data
         self.current_location_data = None
+
+    def update_cache_indicator(self):
+        """Update the cache statistics display"""
+        stats = self.weather_cache.get_stats()
+        self.cache_label.config(text=f"📦 Cache: {stats['entries']}")
+
+    def clear_cache(self):
+        """Clear the weather cache"""
+        count = self.weather_cache.clear()
+        self.update_cache_indicator()
+        messagebox.showinfo("Cache Cleared", f"Cleared {count} cached entries.\nNext requests will fetch fresh data.")
 
     def refresh_locations_list(self):
         """Refresh the locations listbox"""
@@ -379,12 +424,20 @@ class WeatherAppGUI:
         self.city_entry.insert(0, location['name'])
         
         # Fetch weather for this location
-        threading.Thread(target=self.fetch_weather_for_saved_location, 
-                        args=(location,), daemon=True).start()
+        self._start_thread(self.fetch_weather_for_saved_location, (location,))
 
     def fetch_weather_for_saved_location(self, location):
         """Fetch weather for a saved location"""
         try:
+            # Check cache first
+            cached = self.weather_cache.get(location['lat'], location['lon'])
+            
+            if cached:
+                # Use cached data - instant!
+                self._display_cached_weather(location, cached)
+                return
+            
+            # Not in cache - fetch new
             self.weather_text.config(state=tk.NORMAL)
             self.weather_text.delete(1.0, tk.END)
             self.weather_text.insert(tk.END, f"⏳ Loading weather for {location['local_name']}...\n")
@@ -404,6 +457,10 @@ class WeatherAppGUI:
             formatted = self.format_weather_data(weather_data, location['local_name'], 
                                                  location['address'], location['name'])
             
+            # Cache it
+            self.weather_cache.set(location['lat'], location['lon'], weather_data, formatted)
+            self.root.after(0, self.update_cache_indicator)
+            
             self.weather_text.config(state=tk.NORMAL)
             self.weather_text.delete(1.0, tk.END)
             self.weather_text.insert(tk.END, formatted)
@@ -412,6 +469,30 @@ class WeatherAppGUI:
         except Exception as e:
             logger.error(f"Error fetching saved location weather: {e}")
             self.show_error(str(e))
+
+    def _display_cached_weather(self, location, cached_data):
+        """Display cached weather with age info"""
+        self.current_location_data = {
+            'name': location['name'],
+            'local_name': location['local_name'],
+            'lat': location['lat'],
+            'lon': location['lon'],
+            'address': location['address']
+        }
+        
+        age = datetime.now() - cached_data['timestamp']
+        age_min = int(age.total_seconds() / 60)
+        next_update = 15 - age_min
+        
+        formatted = cached_data['formatted']
+        cache_info = f"\n💾 Cached ({age_min} min old) • Fresh in {next_update} min\n"
+        
+        self.weather_text.config(state=tk.NORMAL)
+        self.weather_text.delete(1.0, tk.END)
+        self.weather_text.insert(tk.END, formatted + cache_info)
+        self.weather_text.config(state=tk.DISABLED)
+        
+        self.root.after(0, self.update_cache_indicator)
 
     def save_current_location(self):
         """Save the currently displayed location"""
@@ -544,14 +625,14 @@ class WeatherAppGUI:
             output += "─" * 64 + "\n\n"
             output += f"{weather_icon}  {weather_desc}\n\n"
             
-            # Aligned data (using proper spacing)
-            output += f"🌡️  Temperature:       {str(temp):>6}°C\n"
-            output += f"🤚 Feels Like:        {str(feels_like):>6}°C\n"
-            output += f"💧 Humidity:          {str(humidity):>6}%\n"
-            output += f"💨 Wind Speed:        {str(wind_speed):>6} km/h\n"
-            output += f"🧭 Wind Direction:    {str(wind_direction):>6}°\n"
-            output += f"🌧️  Precipitation:     {str(precipitation):>6} mm\n"
-            output += f"☁️  Cloud Cover:       {str(cloud_cover):>6}%\n"
+            # Aligned data - no emojis on data lines for perfect alignment
+            output += f"Temperature:        {str(temp):>6}°C\n"
+            output += f"Feels Like:         {str(feels_like):>6}°C\n"
+            output += f"Humidity:           {str(humidity):>6}%\n"
+            output += f"Wind Speed:         {str(wind_speed):>6} km/h\n"
+            output += f"Wind Direction:     {str(wind_direction):>6}°\n"
+            output += f"Precipitation:      {str(precipitation):>6} mm\n"
+            output += f"Cloud Cover:        {str(cloud_cover):>6}%\n"
             output += "\n" + "=" * 64 + "\n"
             
             return output
@@ -576,8 +657,7 @@ class WeatherAppGUI:
 
     def fetch_weather_threaded(self):
         """Fetch weather in a separate thread"""
-        thread = threading.Thread(target=self.fetch_weather, daemon=True)
-        thread.start()
+        self._start_thread(self.fetch_weather)
 
     def fetch_weather(self):
         """Main method to fetch and display weather"""
@@ -595,6 +675,28 @@ class WeatherAppGUI:
         try:
             lat, lon, address_en, address_local = self.get_coordinates(city)
             
+            # Check cache first
+            cached = self.weather_cache.get(lat, lon)
+            if cached:
+                self.current_location_data = {
+                    'name': city,
+                    'local_name': address_local,
+                    'lat': lat,
+                    'lon': lon,
+                    'address': address_en
+                }
+                age = datetime.now() - cached['timestamp']
+                age_min = int(age.total_seconds() / 60)
+                cache_info = f"\n💾 Cached ({age_min} min old) • Fresh in {15-age_min} min\n"
+                
+                self.weather_text.config(state=tk.NORMAL)
+                self.weather_text.delete(1.0, tk.END)
+                self.weather_text.insert(tk.END, cached['formatted'] + cache_info)
+                self.weather_text.config(state=tk.DISABLED)
+                self.update_cache_indicator()
+                return
+            
+            # Fetch new data
             weather_data = self.fetch_weather_data(lat, lon)
             
             # Store current location
@@ -607,6 +709,10 @@ class WeatherAppGUI:
             }
             
             formatted = self.format_weather_data(weather_data, city, address_en, address_local)
+            
+            # Cache it
+            self.weather_cache.set(lat, lon, weather_data, formatted)
+            self.update_cache_indicator()
             
             self.weather_text.config(state=tk.NORMAL)
             self.weather_text.delete(1.0, tk.END)

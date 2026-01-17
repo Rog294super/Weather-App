@@ -16,7 +16,7 @@ __pycache__/
 weather_debug.log
 
 # Config files (user-specific)
-config.json
+weather_locations.json
 
 # IDE
 .vscode/
