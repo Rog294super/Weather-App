@@ -1,4 +1,4 @@
-# version="1.3.0"
+# version="1.2.0"
 # author="Rog294super"
 # copyright="2026@ Rog294super"
 # license="MIT"
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 GITHUB_REPO = "Rog294super/Weather-App"
-VERSION = "1.3.0"
+VERSION = "1.2.0"
 CONFIG_FILE = "weather_locations.json"
 
 # Map waarin het script of de .exe zich bevindt
