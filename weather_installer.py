@@ -23,8 +23,8 @@ class InstallerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title(f"Weather Installer v{VERSION}")
-        self.root.geometry("600x450")
-        self.root.resizable(False, False)
+        self.root.geometry("800x600")
+        self.root.resizable(True, True)
         self.root.configure(bg="#2b2b2b")
         
         # Variables
@@ -227,7 +227,8 @@ class InstallerGUI:
             self.root.after(100, lambda: self.show_complete_dialog(install_dir))
             
         except Exception as e:
-            self.root.after(100, lambda: messagebox.showerror("Fout", f"Installatie mislukt:\n{e}"))
+            error_msg = str(e)
+            self.root.after(100, lambda msg=error_msg: messagebox.showerror("Fout", f"Installatie mislukt:\n{msg}"))
             self.install_btn.config(state=tk.NORMAL)
             self.update_progress(0, "Installatie mislukt")
     
@@ -300,12 +301,12 @@ class InstallerGUI:
             if exe_path.exists():
                 # Windows shortcut via PowerShell
                 ps_script = f"""
-$WshShell = New-Object -comObject WScript.Shell
-$Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
-$Shortcut.TargetPath = "{exe_path}"
-$Shortcut.WorkingDirectory = "{exe_path.parent}"
-$Shortcut.Save()
-"""
+                    $WshShell = New-Object -comObject WScript.Shell
+                    $Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
+                    $Shortcut.TargetPath = "{exe_path}"
+                    $Shortcut.WorkingDirectory = "{exe_path.parent}"
+                    $Shortcut.Save()
+                """
                 subprocess.run(["powershell", "-Command", ps_script], 
                              capture_output=True, timeout=5)
         except:

@@ -755,14 +755,15 @@ class WeatherAppGUI:
             try:
                 update_info = self.update_manager.check_for_updates()
                 if update_info:
-                    self.root.after(0, lambda: self.show_update_dialog(update_info))
+                    self.root.after(0, lambda info=update_info: self.show_update_dialog(info))
                 else:
                     self.root.after(0, lambda: messagebox.showinfo(
                         "Up to Date", f"You are running the latest version (v{VERSION})"
                     ))
             except Exception as e:
+                error_msg = str(e)
                 self.root.after(0, lambda: messagebox.showerror(
-                    "Update Check Failed", f"Failed to check for updates:\n{str(e)}"
+                    "Update Check Failed", f"Failed to check for updates:\n{error_msg}"
                 ))
             finally:
                 self.root.after(0, lambda: self.update_button.config(state=tk.NORMAL))
